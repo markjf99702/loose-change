@@ -564,7 +564,8 @@ function hud() {
       el.querySelector('.name').textContent = `Turn ${game.turns}`;
       el.querySelector('.togo').textContent = '';
     } else {
-      el.querySelector('.name').textContent = game.names[p];
+      // on the narrowest phones "The Landlord" is just "Landlord"
+      el.querySelector('.name').textContent = innerWidth < 360 ? game.names[p].replace(/^The /, '') : game.names[p];
       el.querySelector('.togo').textContent = String(togo);
       el.querySelector('.togo').title = `${togo} to go`;
     }
