@@ -1,0 +1,13 @@
+{
+  "name": "loose-change",
+  "private": true,
+  "type": "module",
+  "description": "Shove ha'penny on your phone: five coins, nine beds, a bit of chalk.",
+  "scripts": {
+    "test": "node --test test/unit.test.mjs && node test/e2e.mjs",
+    "build": "node scripts/build.mjs"
+  },
+  "devDependencies": {
+    "upng-js": "^2.1.0"
+  }
+}

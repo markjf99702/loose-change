@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Loose Change</title>
+  <meta name="description" content="Shove ha'penny, the old pub game, with the coins from the junk drawer. Shove five coins up the board into nine beds, chalk up three in every bed, and beat the regulars or pass the phone.">
+  <meta property="og:title" content="Loose Change">
+  <meta property="og:description" content="Shove ha'penny on your phone: five coins, nine beds, a bit of chalk.">
+  <meta property="og:image" content="https://loose-change.junkdrawer.works/og.png">
+  <meta property="og:url" content="https://loose-change.junkdrawer.works/">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#1c1410">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="preload" href="fonts/fraunces.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/figtree.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <noscript><p class="noscript">Loose Change needs JavaScript to slide the coins.</p></noscript>
+
+  <div id="app">
+    <header class="bar">
+      <div class="who" id="who0"><span class="swatch copper"></span><span class="name"></span><span class="togo"></span></div>
+      <div class="status" id="status" aria-live="polite"></div>
+      <div class="who right" id="who1"><span class="name"></span><span class="togo"></span><span class="swatch silver"></span></div>
+      <button class="menu-btn" id="menuBtn" aria-label="Menu">☰</button>
+    </header>
+    <main class="table">
+      <canvas id="board" aria-label="The shove ha'penny board"></canvas>
+      <div class="banner" id="banner" role="status" aria-live="polite" hidden></div>
+    </main>
+  </div>
+
+  <!-- Title -->
+  <section class="sheet" id="title" hidden>
+    <div class="card">
+      <h1>Loose Change</h1>
+      <p class="lede">Shove ha'penny, the old pub game, with the coins from the junk drawer.</p>
+      <button class="primary" id="resumeBtn" hidden>Carry on</button>
+      <h2>Who are you playing?</h2>
+      <div class="opponents" id="opponents"></div>
+      <h2>How long a game?</h2>
+      <div class="seg" id="lengths">
+        <button data-need="1" aria-pressed="true"><b>Quick</b><span>One mark in every bed</span></button>
+        <button data-need="3" aria-pressed="false"><b>Pub rules</b><span>Three marks in every bed</span></button>
+      </div>
+      <button class="primary" id="startBtn">Rack 'em up</button>
+      <button class="link" id="rulesBtn">How to play</button>
+      <footer class="jd-foot">
+        <a href="https://junkdrawer.works/">Part of junkdrawer.works</a>
+        <span aria-hidden="true">·</span>
+        <a href="https://junkdrawer.works/privacy.html">Privacy</a>
+      </footer>
+    </div>
+  </section>
+
+  <!-- Menu during a game -->
+  <section class="sheet" id="menu" hidden>
+    <div class="card small">
+      <h2>Paused</h2>
+      <button class="primary" id="backBtn">Back to the board</button>
+      <button id="soundBtn">Sound: on</button>
+      <button id="menuRulesBtn">How to play</button>
+      <button id="quitBtn">New game</button>
+      <footer class="jd-foot">
+        <a href="https://junkdrawer.works/">Part of junkdrawer.works</a>
+        <span aria-hidden="true">·</span>
+        <a href="https://junkdrawer.works/privacy.html">Privacy</a>
+      </footer>
+    </div>
+  </section>
+
+  <!-- Rules -->
+  <section class="sheet" id="rules" hidden>
+    <div class="card">
+      <h2>How to play</h2>
+      <ul class="rules">
+        <li><b>Slide your finger sideways</b> to move the coin along the edge of the board.</li>
+        <li><b>Pull back and let go</b> to shove it. The further you pull, the harder the shove; pull to one side to angle it. The ring round the coin shows how hard, and the notch is your last shove.</li>
+        <li><b>A coin lying wholly inside a bed</b>, not touching a brass line, scores a chalk mark there when your five coins are done. Knock your own coins up the board with the next ones.</li>
+        <li><b>A coin that doesn't reach the first line</b> comes back to play again. One that goes off the edge or the end is gone.</li>
+        <li><b>Hold a finger on the board</b> while the computer plays to hurry its coins along.</li>
+        <li><b>Fill every bed</b> to win: one mark each in a quick game, three each by pub rules.</li>
+        <li><b>Once your bed is full,</b> coins in it chalk up for your opponent instead. The one exception: their winning mark they have to score themselves.</li>
+      </ul>
+      <button class="primary" id="rulesClose">Got it</button>
+    </div>
+  </section>
+
+  <!-- Game over -->
+  <section class="sheet" id="over" hidden>
+    <div class="card small">
+      <h2 id="overTitle"></h2>
+      <p id="overText"></p>
+      <button class="primary" id="againBtn">Play again</button>
+      <button id="overMenuBtn">Back to the title</button>
+    </div>
+  </section>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
