@@ -131,3 +131,16 @@ h2 { font-family: Fraunces, Georgia, serif; font-weight: 600; font-size: 19px; m
   .status { font-size: 14px; }
   h1 { font-size: 34px; }
 }
+
+/* A phone on its side leaves the board too small to aim at. */
+.turn-me { display: none; }
+@media (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+  .turn-me {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+    padding: 24px; text-align: center;
+    background: var(--bg); color: var(--ink);
+    font-family: Fraunces, Georgia, serif; font-size: 20px;
+  }
+  .turn-me span { font-size: 40px; }
+}
