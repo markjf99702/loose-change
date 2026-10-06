@@ -229,7 +229,50 @@ export function drawChalk(g, v, marks, need, fresh) {
 }
 
 export function drawBoard(g, v, dpr) {
+  drawTable(g, v);
   g.drawImage(wood(v, dpr), v.ox, v.oy, v.bw, v.bh);
+}
+
+// On a wide screen there's table either side of the board: a beer mat, and the ring a pint left behind.
+function drawTable(g, v) {
+  if (v.ox < 170) return;
+  const R = Math.min(v.ox * 0.36, 96);
+  // the mat
+  const mx = v.ox / 2 + 6, my = v.oy + v.bh * 0.34;
+  g.save();
+  g.translate(mx, my); g.rotate(-0.21);
+  g.fillStyle = 'rgba(0,0,0,0.35)';
+  g.beginPath(); g.arc(4, 6, R, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#e8dcc2';
+  g.beginPath();
+  for (let i = 0; i <= 72; i++) {
+    const a = (i / 72) * Math.PI * 2, rr = R * (1 + 0.012 * Math.sin(i * 6));
+    i ? g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr) : g.moveTo(rr, 0);
+  }
+  g.fill();
+  g.strokeStyle = '#a3402c'; g.lineWidth = R * 0.06;
+  g.beginPath(); g.arc(0, 0, R * 0.86, 0, Math.PI * 2); g.stroke();
+  g.lineWidth = R * 0.015;
+  g.beginPath(); g.arc(0, 0, R * 0.78, 0, Math.PI * 2); g.stroke();
+  g.fillStyle = '#a3402c'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.font = `600 ${R * 0.13}px Figtree, system-ui, sans-serif`;
+  g.fillText('THE', 0, -R * 0.36);
+  g.font = `800 ${R * 0.24}px Fraunces, Georgia, serif`;
+  g.fillText('Loose', 0, -R * 0.12);
+  g.fillText('Change', 0, R * 0.14);
+  g.font = `600 ${R * 0.09}px Figtree, system-ui, sans-serif`;
+  g.fillStyle = '#6b4a3a';
+  g.fillText('EST. IN A DRAWER', 0, R * 0.42);
+  // a damp ring where a glass sat on it
+  g.strokeStyle = 'rgba(120,80,40,0.18)'; g.lineWidth = R * 0.05;
+  g.beginPath(); g.arc(R * 0.18, R * 0.1, R * 0.62, 0.4, Math.PI * 1.7); g.stroke();
+  g.restore();
+  // a pint ring on the bare table on the other side
+  const rx = v.ox + v.bw + v.ox / 2, ry = v.oy + v.bh * 0.62;
+  g.strokeStyle = 'rgba(214,174,85,0.08)'; g.lineWidth = R * 0.07;
+  g.beginPath(); g.arc(rx, ry, R * 0.6, 0, Math.PI * 2); g.stroke();
+  g.lineWidth = R * 0.03;
+  g.beginPath(); g.arc(rx + R * 0.16, ry - R * 0.08, R * 0.6, 1, 4.8); g.stroke();
 }
 
 // The beds the player still needs, lit faintly so you know where to aim.
