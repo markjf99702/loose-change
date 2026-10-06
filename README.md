@@ -21,10 +21,10 @@
 - **Coins off the edge are gone.** One that slides off the side or the far end is lost for the turn.
 - **Chalk marks and full beds.** You chalk up on your side of the board, the other player on theirs. Once one of your beds is full, any more coins in it chalk up for your opponent instead, except their winning mark: that one they have to score themselves.
 - **Quick or pub rules.** A quick game needs one mark in every bed; pub rules need three in every bed. The first to fill all nine wins.
-- **The regulars.** Doris, Big Alan and The Landlord each try between 150 and 500 shots on a copy of the board, keep the one that leaves them best placed, then play it with their own unsteady hand. The better ones also check which shots still work when their hand wobbles.
+- **The regulars.** Doris, Big Alan and The Landlord each try out shots on a copy of the board (forty for Doris, a couple of hundred for The Landlord), keep the one that leaves them best placed, then play it with their own unsteady hand. The Landlord also checks which of his best shots still work when his hand wobbles.
 - **Pass the phone.** Two people on one phone: copper against silver.
 - **On your own.** No opponent: fill every bed in as few turns as you can, and it keeps your best for each length of game.
-- **Hold to hurry.** Keep a finger on the board while the computer plays and its coins slide three times as fast.
+- **Hold to hurry.** Keep a finger on the board while the computer plays and its turn runs three times as fast. The menu pauses the game.
 - **Loose change.** Every coin is something from the drawer: a ha'penny from 1967, a wheat penny, a skee-ball token, a brass washer, a bus token from 1987.
 - **Sounds made with Web Audio.** The slide, the clink and the chalk are made on the spot, with no sound files. They can be turned off from the menu.
 - No account and no server. Your settings, your record against each regular, your best on your own and a game in progress stay in your browser. It works offline and installs to a phone's home screen.

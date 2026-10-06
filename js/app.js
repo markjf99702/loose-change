@@ -6,8 +6,14 @@ import * as sound from './sound.js';
 
 const KEY = 'loose-change.v1';
 const COINS = 5;
-const MAX_DIST = 700;          // a full-strength shove, in mm
+const MIN_DIST = 200;          // the gentlest shove, in mm: not quite to the first line
+const MAX_DIST = 700;          // a full-strength shove: off the far end
 const MAX_ANGLE = 0.38;        // radians either side of straight up
+const HURRY = 3;               // how much faster the computer plays while you hold a finger down
+
+// The power ring runs from the gentlest shove to the hardest, so all of it is useful.
+const distOf = power => MIN_DIST + power * (MAX_DIST - MIN_DIST);
+const powerOf = dist => Math.max(0, Math.min(1, (dist - MIN_DIST) / (MAX_DIST - MIN_DIST)));
 
 const $ = id => document.getElementById(id);
 const canvas = $('board');
@@ -16,19 +22,35 @@ let dpr = 1, view = null;
 
 // ---- saved things --------------------------------------------------------------------------------------------
 
+const OPPONENTS = [...REGULARS.map(r => r.id), 'pass', 'solo'];
+const goodMarks = m => Array.isArray(m) && m.length === 2 &&
+  m.every(row => Array.isArray(row) && row.length === BOARD.beds && row.every(n => Number.isInteger(n) && n >= 0 && n <= 3));
+const goodGame = s => s && OPPONENTS.includes(s.opp) && (s.need === 1 || s.need === 3) && goodMarks(s.marks) &&
+  (s.turn === 0 || s.turn === 1) && Number.isInteger(s.turns ?? 1);
+
 function load() { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } }
 const saved = load();
-const prefs = { shots: saved.shots || 0, opp: saved.opp ?? 'doris', need: saved.need ?? 1, muted: !!saved.muted, record: saved.record || {}, best: saved.best || {}, lastPower: saved.lastPower || [null, null] };
-let pendingGame = saved.game || null;
+const prefs = {
+  shots: Number(saved.shots) || 0,
+  opp: OPPONENTS.includes(saved.opp) ? saved.opp : 'doris',
+  need: saved.need === 3 ? 3 : 1,
+  muted: !!saved.muted,
+  record: saved.record && typeof saved.record === 'object' ? saved.record : {},
+  best: saved.best && typeof saved.best === 'object' ? saved.best : {},
+  lastPower: Array.isArray(saved.lastPower) ? saved.lastPower : [null, null],
+};
+let pendingGame = goodGame(saved.game) ? saved.game : null;
+
+// What's saved for "Carry on" is always the start of a turn (game.snapshot), never a turn half played.
 function save() {
   try {
-    localStorage.setItem(KEY, JSON.stringify({
-      ...prefs,
-      game: game && game.phase !== 'over' ? { opp: game.opp, need: game.need, marks: game.marks, turn: game.turn, turns: game.turns } : null,
-    }));
+    localStorage.setItem(KEY, JSON.stringify({ ...prefs, game: game ? game.snapshot : pendingGame }));
   } catch { /* storage off: the game still plays */ }
 }
 sound.setMuted(prefs.muted);
+
+const recordKey = (opp, need) => `${opp}:${need}`;
+const lengthName = need => (need === 3 ? 'pub rules' : 'quick games');
 
 // ---- the game --------------------------------------------------------------------------------------------------
 
@@ -38,30 +60,39 @@ let nextId = 1;
 function names(opp) {
   if (opp === 'pass') return ['Copper', 'Silver'];
   if (opp === 'solo') return ['You', ''];
-  return ['You', REGULARS.find(r => r.id === opp).name];
+  return ['You', REGULARS.find(r => r.id === opp)?.name ?? 'The regular'];
 }
 const isCpu = p => game.opp !== 'pass' && game.opp !== 'solo' && p === 1;
 const isSolo = () => game.opp === 'solo';
 const regular = () => REGULARS.find(r => r.id === game.opp);
+// a player's name in the middle of a sentence
+const nameIn = p => (game.opp !== 'pass' && !isSolo() && p === 0 ? 'you' : game.names[p]);
 
 function newGame(opp, need, resume) {
   game = {
     opp, need,
     names: names(opp),
-    marks: resume?.marks || newMarks(),
+    marks: resume?.marks ? resume.marks.map(m => [...m]) : newMarks(),
     turn: resume?.turn ?? 0,
     turns: resume?.turns ?? 1,          // on your own: which turn this is
     hand: COINS, board: [], current: null,
     phase: 'aim', aim: null, chalk: null, fade: 0, falls: [],
     lastX: [BOARD.w / 2, BOARD.w / 2],
+    clock: 0, timers: [],               // the game's own time: it stops while the menu is open
+    cpu: null, winner: -1, snapshot: null,
   };
+  pendingGame = null;
   startTurn(true);
 }
+
+// Run fn after `seconds` of game time.
+function later(seconds, fn) { game.timers.push({ at: game.clock + seconds, fn }); }
 
 function startTurn(announce) {
   game.hand = COINS; game.board = []; game.falls = [];
   // five coins out of the drawer, in a random order
   game.faces = FACES[game.turn].map((_, i) => i).sort(() => Math.random() - 0.5).slice(0, COINS);
+  game.snapshot = { opp: game.opp, need: game.need, marks: game.marks.map(m => [...m]), turn: game.turn, turns: game.turns };
   save();
   if (announce) {
     const who = game.names[game.turn];
@@ -80,16 +111,17 @@ function nextCoin() {
   game.board.push(game.current);
   game.phase = 'aim'; game.aim = null;
   hud();
-  if (isCpu(game.turn)) cpuShot();
+  if (isCpu(game.turn)) game.cpu = { stage: 'think', t: 0, wait: 0.5 + Math.random() * 0.4 };
 }
 
 function shoot(angle, dist) {
   const c = game.current;
+  if (!c) return;
   game.lastX[game.turn] = c.x;
-  if (!isCpu(game.turn)) { prefs.lastPower[game.turn] = dist / MAX_DIST; prefs.shots = (prefs.shots || 0) + 1; }
+  if (!isCpu(game.turn)) { prefs.lastPower[game.turn] = powerOf(dist); prefs.shots = (prefs.shots || 0) + 1; }
   strike(c, angle, dist);
-  sound.shove(dist / MAX_DIST);
-  game.phase = 'rolling'; game.aim = null; game.current = null;
+  sound.shove(powerOf(dist));
+  game.phase = 'rolling'; game.aim = null; game.current = null; game.cpu = null;
   hud();
 }
 
@@ -121,15 +153,28 @@ function scoreUp() {
   const tally = before.map(m => [...m]);
   game.queue = awarded.map(a => ({ ...a, index: tally[a.player][a.bed]++ }));
   game.chalk = null;
+
+  // Settle the result now, so a reload during the chalk can't replay or lose this turn.
+  game.winner = isSolo() ? (left(game.marks, 0, game.need) === 0 ? 0 : -1) : winner(game.marks, game.need);
+  if (game.winner >= 0) {
+    game.snapshot = null;
+    keepResult(game.winner);
+  } else {
+    game.snapshot = {
+      opp: game.opp, need: game.need, marks: game.marks.map(m => [...m]),
+      turn: isSolo() ? game.turn : 1 - game.turn, turns: isSolo() ? game.turns + 1 : game.turns,
+    };
+  }
+  save();
   hud();
+
   const mine = awarded.filter(a => !a.gift).length, gifts = awarded.filter(a => a.gift).length;
-  const who = game.names[game.turn];
-  let line = mine === 0 ? 'Nothing this time' : `${mine} mark${mine > 1 ? 's' : ''}`;
-  if (isSolo() && mine) line = `${mine} mark${mine > 1 ? 's' : ''}`;
-  else if (game.opp !== 'pass' && game.turn === 0 && mine) line = `${mine} mark${mine > 1 ? 's' : ''} for you`;
-  else if (mine) line = `${mine} mark${mine > 1 ? 's' : ''} for ${who}`;
+  const marks = n => `${n} mark${n > 1 ? 's' : ''}`;
+  let line = 'Nothing this time';
+  if (mine && (isSolo() || game.opp === 'pass')) line = isSolo() ? marks(mine) : `${marks(mine)} for ${game.names[game.turn]}`;
+  else if (mine) line = `${marks(mine)} for ${nameIn(game.turn)}`;
   const spare = counts.reduce((sum, n) => sum + n, 0) - mine - gifts;
-  const giftLine = gifts ? `${gifts} given to ${game.names[1 - game.turn]} from full beds` : '';
+  const giftLine = gifts ? `${gifts} given to ${nameIn(1 - game.turn)} from full beds` : '';
   let said = '';
   if (isCpu(1)) {
     const cpu = isCpu(game.turn);
@@ -137,20 +182,20 @@ function scoreUp() {
     else if (mine >= 2) said = quip(cpu ? 'mine' : 'yours', 0.5);
   }
   banner(line, [giftLine || (isSolo() && spare > 0 ? `${spare} in beds already full` : ''), said], said ? 2000 : 1400);
-  setTimeout(nextChalk, awarded.length ? 500 : 900);
+  later(awarded.length ? 0.5 : 0.9, nextChalk);
 }
 
 function nextChalk() {
-  if (!game || game.phase !== 'scoring') return;
+  if (game.phase !== 'scoring') return;
   const a = game.queue.shift();
   if (!a) {
     game.chalk = null;
-    const w = isSolo() ? (left(game.marks, 0, game.need) === 0 ? 0 : -1) : winner(game.marks, game.need);
-    if (w >= 0) return gameOver(w);
+    if (game.winner >= 0) return gameOver(game.winner);
     game.phase = 'clearing'; game.fade = 0;
+    hud();
     return;
   }
-  game.chalk = { ...a, t: 0, start: performance.now() };
+  game.chalk = { ...a, t: 0 };
   sound.chalk();
   buzz(12);
 }
@@ -161,37 +206,41 @@ function endClearing() {
   startTurn(true);
 }
 
+// The record is kept as soon as the winning turn is scored.
+function keepResult(w) {
+  if (isSolo()) {
+    const best = prefs.best[game.need];
+    game.result = { best, beat: !best || game.turns < best };
+    if (game.result.beat) prefs.best[game.need] = game.turns;
+  } else if (game.opp !== 'pass') {
+    const key = recordKey(game.opp, game.need);
+    const r = prefs.record[key] || [0, 0];
+    r[w === 0 ? 0 : 1]++;
+    prefs.record[key] = r;
+  }
+}
+
 function gameOver(w) {
   game.phase = 'over';
   hud();
   if (isSolo()) {
-    const best = prefs.best[game.need];
-    const record = !best || game.turns < best;
-    if (record) prefs.best[game.need] = game.turns;
-    save();
+    const { best, beat } = game.result;
     sound.cheer();
     $('overTitle').textContent = 'Every bed filled';
     $('overText').textContent = `In ${game.turns} turn${game.turns === 1 ? '' : 's'}. ` +
-      (record ? (best ? `That beats your best of ${best}.` : 'That\'s your best so far.') : `Your best is ${best}.`);
-    setTimeout(() => show('over'), 900);
-    return;
+      (beat ? (best ? `That beats your best of ${best}.` : 'That\'s your best so far.') : `Your best is ${best}.`);
+  } else {
+    const pass = game.opp === 'pass';
+    if (w === 0 || pass) sound.cheer();
+    $('overTitle').textContent = pass ? `${game.names[w]} wins` : w === 0 ? 'You win' : `${game.names[1]} wins`;
+    const loser = left(game.marks, 1 - w, game.need);
+    const rec = prefs.record[recordKey(game.opp, game.need)];
+    const loserName = pass ? game.names[1 - w] : w === 0 ? game.names[1] : 'You';
+    $('overText').textContent = `${loserName} had ${loser} mark${loser === 1 ? '' : 's'} to go.`
+      + (rec && !pass ? ` Against ${game.names[1]} in ${lengthName(game.need)}: ${rec[0]} won, ${rec[1]} lost.` : '')
+      + (pass ? '' : `\n${quip(w === 0 ? 'lost' : 'won', 1)}`);
   }
-  const pass = game.opp === 'pass';
-  if (!pass) {
-    const r = prefs.record[game.opp] || [0, 0];
-    r[w === 0 ? 0 : 1]++;
-    prefs.record[game.opp] = r;
-  }
-  save();
-  if (w === 0 || pass) sound.cheer();
-  $('overTitle').textContent = pass ? `${game.names[w]} wins` : w === 0 ? 'You win' : `${game.names[1]} wins`;
-  const loser = left(game.marks, 1 - w, game.need);
-  const rec = prefs.record[game.opp];
-  $('overText').textContent = (pass ? `${game.names[1 - w]} had ${loser} mark${loser === 1 ? '' : 's'} to go.` :
-    w === 0 ? `${game.names[1]} had ${loser} mark${loser === 1 ? '' : 's'} to go.` : `You had ${loser} mark${loser === 1 ? '' : 's'} to go.`)
-    + (rec ? ` Against ${game.names[1]}: ${rec[0]} won, ${rec[1]} lost.` : '')
-    + (pass ? '' : `\n${quip(w === 0 ? 'lost' : 'won', 1)}`);
-  setTimeout(() => show('over'), 900);
+  later(0.9, () => show('over'));
 }
 
 // What the regulars say. Picked now and then, never every turn.
@@ -232,94 +281,106 @@ const buzz = ms => { if (!prefs.muted) try { navigator.vibrate?.(ms); } catch { 
 
 // ---- the computer's turn ----------------------------------------------------------------------------------------
 
-function cpuShot() {
-  const me = game;
-  const who = regular();
-  setTimeout(() => {
-    if (game !== me || game.phase !== 'aim') return;
-    const others = game.board.filter(c => c !== game.current);
-    const plan = chooseShot(others, game.marks, game.turn, game.need, who);
-    const shot = wobble(plan, who);
+// Think, slide the coin over, draw back, let go. Runs on game time, so the menu pauses it and a held
+// finger hurries it.
+function updateCpu(dt) {
+  const cpu = game.cpu;
+  if (!cpu || game.phase !== 'aim' || !game.current) return;
+  cpu.t += dt;
+  const c = game.current;
+  if (cpu.stage === 'think' && cpu.t >= cpu.wait) {
+    const who = regular();
+    const others = game.board.filter(o => o !== c);
+    const shot = wobble(chooseShot(others, game.marks, game.turn, game.need, who), who);
     shot.x = Math.max(BOARD.r, Math.min(BOARD.w - BOARD.r, shot.x));
-    // slide the coin over, draw back, let go
-    const c = game.current, x0 = c.x, t0 = performance.now();
-    const dur = 450 + Math.abs(shot.x - x0) * 3;
-    const anim = now => {
-      if (game !== me || game.phase !== 'aim') return;
-      const t = Math.min(1, (now - t0) / dur);
-      c.x = x0 + (shot.x - x0) * (1 - Math.pow(1 - t, 3));
-      const pull = Math.max(0, (now - t0 - dur * 0.6) / 650);
-      if (pull > 0) game.aim = { angle: shot.angle, power: Math.min(1, pull) * Math.min(1, shot.dist / MAX_DIST) };
-      if (t < 1 || pull < 1) requestAnimationFrame(anim);
-      else setTimeout(() => { if (game === me && game.phase === 'aim') shoot(shot.angle, shot.dist); }, 120);
-    };
-    requestAnimationFrame(anim);
-  }, 500 + Math.random() * 400);
+    Object.assign(cpu, { stage: 'move', t: 0, shot, x0: c.x, dur: 0.45 + Math.abs(shot.x - c.x) * 0.003 });
+  }
+  if (cpu.stage === 'move') {
+    const { shot, x0, dur } = cpu;
+    const t = Math.min(1, cpu.t / dur);
+    c.x = x0 + (shot.x - x0) * (1 - Math.pow(1 - t, 3));
+    const pull = Math.max(0, (cpu.t - dur * 0.6) / 0.65);
+    if (pull > 0) game.aim = { angle: shot.angle, power: Math.min(1, pull) * powerOf(shot.dist) };
+    if (t >= 1 && pull >= 1) { cpu.stage = 'hold'; cpu.t = 0; }
+  }
+  if (cpu.stage === 'hold' && cpu.t >= 0.12) shoot(cpu.shot.angle, cpu.shot.dist);
 }
 
 // ---- input -----------------------------------------------------------------------------------------------------
 
+const sheetOpen = () => !!document.querySelector('.sheet:not([hidden])');
+const paused = () => !$('menu').hidden || !$('rules').hidden;
+
 let drag = null;
-let hurry = false;     // a finger held down on the computer's turn runs its coins faster
+let hurry = null;      // the pointer held down on the computer's turn, which runs its turn faster
 canvas.addEventListener('pointerdown', e => {
   sound.wake();
-  if (game && isCpu(game.turn)) { hurry = true; return; }
-  if (!game || game.phase !== 'aim') return;
+  if (!game) return;
+  if (isCpu(game.turn) || game.phase !== 'aim') {
+    if (isCpu(game.turn)) { hurry = e.pointerId; canvas.setPointerCapture(e.pointerId); }
+    return;
+  }
   canvas.setPointerCapture(e.pointerId);
   // A full shove is a long pull, but if you start low on the screen there's less room under your finger,
   // so the same ring fills in a shorter pull.
   const full = Math.min(300, view.ch * 0.42);
   const room = innerHeight - e.clientY - 12;
-  const maxPull = Math.max(Math.min(full, 150), Math.min(full, room));
+  const maxPull = Math.max(60, Math.min(full, room));
   drag = { id: e.pointerId, x0: e.clientX, y0: e.clientY, coinX: game.current.x, mode: null, maxPull };
 });
 canvas.addEventListener('pointermove', e => {
-  if (!drag || e.pointerId !== drag.id || !game?.current) return;
+  if (!drag || e.pointerId !== drag.id || !game?.current || game.phase !== 'aim') return;
   const dx = e.clientX - drag.x0, dy = e.clientY - drag.y0;
   if (!drag.mode && Math.hypot(dx, dy) > 8) drag.mode = dy > Math.abs(dx) * 0.7 ? 'pull' : 'slide';
   if (drag.mode === 'slide') {
     game.current.x = Math.max(BOARD.r, Math.min(BOARD.w - BOARD.r, drag.coinX + dx / view.s));
   } else if (drag.mode === 'pull') {
-    const maxPull = drag.maxPull;
-    const len = Math.max(0, dy) > 0 ? Math.hypot(dx, dy) : 0;
+    const len = dy > 0 ? Math.hypot(dx, dy) : 0;
     const angle = Math.max(-MAX_ANGLE, Math.min(MAX_ANGLE, Math.atan2(-dx, Math.max(1, dy))));
-    game.aim = { angle, power: Math.min(1, len / maxPull), human: true };
+    game.aim = { angle, power: Math.min(1, len / drag.maxPull), human: true };
   }
 });
 const release = e => {
-  hurry = false;
+  if (e.pointerId === hurry) hurry = null;
   if (!drag || e.pointerId !== drag.id) return;
   const was = drag; drag = null;
-  if (was.mode === 'pull' && game?.aim && game.phase === 'aim') {
-    if (game.aim.power > 0.04 && e.type === 'pointerup') shoot(game.aim.angle, game.aim.power * MAX_DIST);
+  if (was.mode === 'pull' && game?.aim?.human && game.phase === 'aim') {
+    if (game.aim.power > 0.04 && e.type === 'pointerup') shoot(game.aim.angle, distOf(game.aim.power));
     else game.aim = null;
   }
 };
 canvas.addEventListener('pointerup', release);
 canvas.addEventListener('pointercancel', release);
 
-// keyboard: arrows move and angle, space or enter holds to build power
+// keyboard: arrows move and angle, space or enter held down builds the shove
 let keyPower = null;
+const keyAim = () => (keyPower ? Math.min(1, (performance.now() - keyPower.t0) / 1600) : 0);
+const shoveKey = e => e.key === ' ' || e.key === 'Enter';
 addEventListener('keydown', e => {
-  if (!game || game.phase !== 'aim' || isCpu(game.turn) || !$('title').hidden || !$('menu').hidden) return;
+  if (!game || game.phase !== 'aim' || isCpu(game.turn) || sheetOpen()) return;
+  // Enter or space on a button (the menu) is for the button
+  if (shoveKey(e) && e.target?.closest?.('button, a')) return;
   const c = game.current;
-  if (e.key === 'ArrowLeft' && !keyPower) { c.x = Math.max(BOARD.r, c.x - 3); e.preventDefault(); }
-  if (e.key === 'ArrowRight' && !keyPower) { c.x = Math.min(BOARD.w - BOARD.r, c.x + 3); e.preventDefault(); }
-  if ((e.key === ' ' || e.key === 'Enter') && !keyPower && !e.repeat) {
-    sound.wake();
-    keyPower = { t0: performance.now(), angle: game.aim?.angle || 0 }; e.preventDefault();
-  }
-  if (keyPower && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
-    keyPower.angle = Math.max(-MAX_ANGLE, Math.min(MAX_ANGLE, keyPower.angle + (e.key === 'ArrowLeft' ? -0.02 : 0.02)));
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    const sign = e.key === 'ArrowLeft' ? -1 : 1;
+    if (keyPower) keyPower.angle = Math.max(-MAX_ANGLE, Math.min(MAX_ANGLE, keyPower.angle + sign * 0.02));
+    else c.x = Math.max(BOARD.r, Math.min(BOARD.w - BOARD.r, c.x + sign * 3));
     e.preventDefault();
+  }
+  if (shoveKey(e)) {
+    e.preventDefault();
+    if (!keyPower && !e.repeat) { sound.wake(); keyPower = { t0: performance.now(), angle: 0 }; }
   }
 });
 addEventListener('keyup', e => {
-  if ((e.key === ' ' || e.key === 'Enter') && keyPower && game?.phase === 'aim' && game.aim) {
-    shoot(game.aim.angle, game.aim.power * MAX_DIST);
-    keyPower = null;
-  }
+  if (!shoveKey(e) || !keyPower) return;
+  const power = keyAim(), angle = keyPower.angle;
+  keyPower = null;
+  if (!game || game.phase !== 'aim' || isCpu(game.turn) || sheetOpen()) return;
+  if (power > 0.04) shoot(angle, distOf(power));
+  else game.aim = null;
 });
+addEventListener('blur', () => { keyPower = null; hurry = null; if (game?.aim?.human) game.aim = null; });
 
 // ---- drawing ---------------------------------------------------------------------------------------------------
 
@@ -334,19 +395,27 @@ addEventListener('resize', resize);
 let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
-  if (game) update(dt, now);
+  if (game && !paused()) update(hurry != null && isCpu(game.turn) ? dt * HURRY : dt);
+  else sound.slide(0);
   draw(now);
   requestAnimationFrame(frame);
 }
 
-function update(dt, now) {
-  if (keyPower && game.phase === 'aim') {
-    const t = (now - keyPower.t0) / 1600;
-    game.aim = { angle: keyPower.angle, power: Math.min(1, t), human: true };
+function update(dt) {
+  game.clock += dt;
+  const due = game.timers.filter(t => t.at <= game.clock);
+  if (due.length) {
+    game.timers = game.timers.filter(t => t.at > game.clock);
+    for (const t of due) t.fn();
   }
+  if (keyPower) {
+    if (game.phase === 'aim' && !isCpu(game.turn)) game.aim = { angle: keyPower.angle, power: keyAim(), human: true };
+    else keyPower = null;
+  }
+  updateCpu(dt);
   if (game.phase === 'rolling') {
     let fastest = 0;
-    step(game.board, hurry && isCpu(game.turn) ? dt * 3 : dt, {
+    step(game.board, dt, {
       onHit: v => { sound.clink(v); if (v > 150) buzz(6); },
       onFall: c => { game.falls.push({ c, t: 0 }); sound.drop(); },
     });
@@ -357,11 +426,12 @@ function update(dt, now) {
   for (const f of game.falls) f.t += dt;
   game.falls = game.falls.filter(f => f.t < 0.6);
   if (game.phase === 'scoring' && game.chalk) {
-    game.chalk.t = Math.min(1, (now - game.chalk.start) / 320);
+    game.chalk.t = Math.min(1, game.chalk.t + dt / 0.32);
     if (game.chalk.t >= 1) {
       game.chalkMarks[game.chalk.player][game.chalk.bed]++;
       game.chalk = null;
-      setTimeout(nextChalk, 140);
+      hud();
+      later(0.14, nextChalk);
     }
   }
   if (game.phase === 'clearing') {
@@ -466,7 +536,8 @@ function drawCaption(now, hy) {
   const teach = human && !game.aim && !drag && (prefs.shots || 0) < 3;
   const a = teach ? 0.35 + 0.25 * Math.sin(now / 400) : 0.6;
   const who = game.opp === 'pass' ? game.names[game.turn] : human ? 'You' : game.names[game.turn];
-  const text = teach ? 'Slide to place · pull back to shove' : `${who}: ${FACES[game.turn][game.current.face].name}`;
+  const text = teach ? 'Slide to place · pull back to shove'
+    : `${who}: ${FACES[game.turn][game.current.face].name}${!human && hurry == null && game.cpu ? ' · hold to hurry' : ''}`;
   g.fillStyle = `rgba(243,231,214,${a})`;
   g.font = '500 13px Figtree, system-ui, sans-serif';
   g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -484,9 +555,11 @@ function drawIdle() {
 
 function hud() {
   if (!game) return;
+  // while the chalk goes up, the counts follow the chalk
+  const marks = game.phase === 'scoring' && game.chalkMarks ? game.chalkMarks : game.marks;
   for (const p of [0, 1]) {
     const el = $(`who${p}`);
-    const togo = left(game.marks, p, game.need);
+    const togo = left(marks, p, game.need);
     if (isSolo() && p === 1) {
       el.querySelector('.name').textContent = `Turn ${game.turns}`;
       el.querySelector('.togo').textContent = '';
@@ -523,6 +596,8 @@ function banner(text, small = '', ms = 1200) {
 
 function show(id) {
   for (const s of ['title', 'menu', 'rules', 'over']) $(s).hidden = s !== id;
+  // a button on a sheet that just closed shouldn't keep the keyboard
+  if (!id && document.activeElement?.closest?.('.sheet')) document.activeElement.blur();
 }
 
 let rulesFrom = 'title';
@@ -534,12 +609,12 @@ function buildTitle() {
     const b = document.createElement('button');
     b.dataset.opp = o.id;
     b.setAttribute('aria-pressed', String(prefs.opp === o.id));
-    const rec = prefs.record[o.id];
+    const rec = prefs.record[recordKey(o.id, prefs.need)];
     const best = o.id === 'solo' && prefs.best[prefs.need];
     b.innerHTML = `<b></b><span></span>${rec || best ? '<em class="rec"></em>' : ''}`;
     b.querySelector('b').textContent = o.name;
     b.querySelector('span').textContent = o.blurb;
-    if (rec) b.querySelector('.rec').textContent = `Won ${rec[0]}, lost ${rec[1]}`;
+    if (rec) b.querySelector('.rec').textContent = `${lengthName(prefs.need)[0].toUpperCase()}${lengthName(prefs.need).slice(1)}: won ${rec[0]}, lost ${rec[1]}`;
     if (best) b.querySelector('.rec').textContent = `Best: ${best} turn${best === 1 ? '' : 's'}`;
     b.onclick = () => { prefs.opp = o.id; save(); buildTitle(); };
     box.append(b);
@@ -554,20 +629,38 @@ function buildTitle() {
     : pendingGame.opp === 'solo' ? `Carry on: turn ${pendingGame.turns || 1} on your own` : `Carry on against ${names(pendingGame.opp)[1]}`;
 }
 
-$('startBtn').onclick = () => { sound.wake(); pendingGame = null; show(null); newGame(prefs.opp, prefs.need); };
-$('resumeBtn').onclick = () => { sound.wake(); const p = pendingGame; pendingGame = null; show(null); newGame(p.opp, p.need, p); };
+let quitArmed = false;
+function syncMenu() {
+  $('soundBtn').textContent = `Sound: ${prefs.muted ? 'off' : 'on'}`;
+  quitArmed = false;
+  $('quitBtn').textContent = 'New game';
+}
+function toTitle() {
+  game = null;
+  save();
+  buildTitle(); show('title'); clearHud();
+}
+
+$('startBtn').onclick = () => { sound.wake(); show(null); newGame(prefs.opp, prefs.need); };
+$('resumeBtn').onclick = () => { if (!pendingGame) return; sound.wake(); const p = pendingGame; show(null); newGame(p.opp, p.need, p); };
 $('rulesBtn').onclick = () => { rulesFrom = 'title'; show('rules'); };
 $('menuRulesBtn').onclick = () => { rulesFrom = 'menu'; show('rules'); };
 $('rulesClose').onclick = () => show(rulesFrom);
-$('menuBtn').onclick = () => { if (game && game.phase !== 'over') { syncSound(); show('menu'); } else { buildTitle(); show('title'); } };
+$('menuBtn').onclick = () => {
+  if (game && game.phase !== 'over') { syncMenu(); show('menu'); }
+  else { if (game) toTitle(); else { buildTitle(); show('title'); } }
+};
 $('backBtn').onclick = () => show(null);
-$('quitBtn').onclick = () => { game = null; save(); pendingGame = null; buildTitle(); show('title'); clearHud(); };
-$('soundBtn').onclick = () => { prefs.muted = !prefs.muted; sound.setMuted(prefs.muted); save(); syncSound(); };
-$('againBtn').onclick = () => { sound.wake(); show(null); const { opp, need } = game; newGame(opp, need); };
-$('overMenuBtn').onclick = () => { game = null; buildTitle(); show('title'); clearHud(); };
-function syncSound() { $('soundBtn').textContent = `Sound: ${prefs.muted ? 'off' : 'on'}`; }
+$('quitBtn').onclick = () => {
+  if (!quitArmed) { quitArmed = true; $('quitBtn').textContent = 'Tap again to give up this game'; return; }
+  pendingGame = null;
+  toTitle();
+};
+$('soundBtn').onclick = () => { prefs.muted = !prefs.muted; sound.setMuted(prefs.muted); save(); syncMenu(); };
+$('againBtn').onclick = () => { if (!game) return; sound.wake(); show(null); const { opp, need } = game; newGame(opp, need); };
+$('overMenuBtn').onclick = toTitle;
 function clearHud() {
-  for (const p of [0, 1]) { const el = $(`who${p}`); el.querySelector('.name').textContent = ''; el.querySelector('.togo').textContent = ''; el.classList.remove('on'); }
+  for (const p of [0, 1]) { const el = $(`who${p}`); el.querySelector('.name').textContent = ''; el.querySelector('.togo').textContent = ''; el.classList.remove('on', 'solo'); }
   $('status').textContent = '';
 }
 
