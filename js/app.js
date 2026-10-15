@@ -309,7 +309,9 @@ function updateCpu(dt) {
 // ---- input -----------------------------------------------------------------------------------------------------
 
 const sheetOpen = () => !!document.querySelector('.sheet:not([hidden])');
-const paused = () => !$('menu').hidden || !$('rules').hidden;
+// A phone on its side is asked to turn upright (.turn-me in css/app.css, the same query), and the game waits for it.
+const sideways = matchMedia('(orientation: landscape) and (max-height: 500px) and (pointer: coarse)');
+const paused = () => !$('menu').hidden || !$('rules').hidden || sideways.matches;
 
 let drag = null;
 let hurry = null;      // the pointer held down on the computer's turn, which runs its turn faster

@@ -81,6 +81,17 @@ try {
   await playOut();
   await page.waitForFunction(() => window.looseChange.game.turn === 1, null, { timeout: 20000 });
   step("the computer's turn began");
+
+  // Turned on its side, the phone asks to be turned upright, and the game waits behind that until it is.
+  await page.setViewportSize({ width: 844, height: 390 });
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.turn-me')).display), 'flex', 'a phone on its side should be asked to turn upright');
+  const sidewaysAt = await page.evaluate(() => window.looseChange.game.clock);
+  await page.waitForTimeout(800);
+  assert.equal(await page.evaluate(() => window.looseChange.game.clock), sidewaysAt, 'the game should wait while the phone is on its side');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForFunction(t => window.looseChange.game.clock > t, sidewaysAt, { timeout: 5000 });
+  step('on its side the game waits; upright again it carries on');
+
   await page.waitForFunction(() => { const g = window.looseChange.game; return g.phase === 'over' || (g.turn === 0 && g.phase === 'aim'); }, null, { timeout: 45000 });
   const after = await page.evaluate(() => { const g = window.looseChange.game; return { phase: g.phase, marks: g.marks, turn: g.turn }; });
   const chalked = after.marks.map(m => m.reduce((a, b) => a + b, 0));
