@@ -102,6 +102,20 @@ test('off the sides or the far end, a coin is dead', () => {
   for (const c of [right, left_, far]) { assert.equal(bedOf(c), 0); assert.ok(c.fellAt); }
 });
 
+test('a coin that stops with more than half of it past an edge tips off', () => {
+  const { w, h } = BOARD;
+  // a nudge of 2 mm, sideways or up the board
+  const nudge = (x, y, angle) => { const c = at(x, y); strike(c, angle, 2); settle([c]); return c; };
+  // from 1 mm inside an edge it stops with its centre just past it
+  assert.equal(nudge(w - 1, 300, Math.PI / 2).dead, true);
+  assert.equal(nudge(1, 300, -Math.PI / 2).dead, true);
+  assert.equal(nudge(178, h - 1, 0).dead, true);
+  // from 3 mm inside it stops just short, mostly on the board, and stays
+  assert.equal(nudge(w - 3, 300, Math.PI / 2).dead, false);
+  assert.equal(nudge(3, 300, -Math.PI / 2).dead, false);
+  assert.equal(nudge(178, h - 3, 0).dead, false);
+});
+
 test('a coin knocked off the end by another is dead too', () => {
   const near = at(178, BOARD.h - 14, { id: 1 });
   const shooter = makeCoin(178, 2);

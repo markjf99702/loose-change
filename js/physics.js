@@ -53,8 +53,8 @@ function tick(coins, dt, ev) {
     c.vx *= k; c.vy *= k;
     c.x += c.vx * dt; c.y += c.vy * dt;
     c.rot += c.spin * dt; c.spin *= 0.995;
-    // Off the board: past an edge by more than half the coin, it tips over.
-    if (c.x < -r * 0.2 || c.x > w + r * 0.2 || c.y > h + r * 0.2) {
+    // Off the board: once more than half the coin is past an edge (its centre is), it tips over.
+    if (c.x < 0 || c.x > w || c.y > h) {
       c.dead = true; c.fellAt = { x: c.x, y: c.y, vx: c.vx, vy: c.vy };
       c.vx = 0; c.vy = 0;
       ev.onFall?.(c);
