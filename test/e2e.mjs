@@ -318,6 +318,47 @@ try {
     step('a damaged turn-so-far starts the turn again');
   }
 
+  // In Pass the phone the colours take turns to go first: Play again starts with the one that went second, even after
+  // a reload in between.
+  {
+    const pctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true });
+    const p = watch(await pctx.newPage());
+    await p.goto(base);
+    await p.evaluate(() => localStorage.clear());
+    await p.reload();
+    await p.click('#opponents button[data-opp="pass"]');
+    await p.click('#lengths button[data-need="1"]');
+    await p.click('#startBtn');
+    // whoever's turn it is needs only bed 9: one coin there and the rest off the far end wins it
+    const finish = async () => {
+      await p.waitForFunction(() => window.looseChange.game?.phase === 'aim');
+      await p.evaluate(() => { const g = window.looseChange.game; g.marks[g.turn] = [1, 1, 1, 1, 1, 1, 1, 1, 0]; });
+      for (const bed of [9, 0, 0, 0, 0]) {
+        await p.waitForFunction(() => { const g = window.looseChange.game; return g.phase === 'aim' && g.current; }, null, { timeout: 20000 });
+        await p.evaluate(bed => {
+          const lc = window.looseChange;
+          lc.game.current.x = bed ? lc.BOARD.w / 2 : 60;
+          lc.shoot(0, bed ? (lc.lineY(8) + lc.lineY(9)) / 2 - lc.BOARD.startY : lc.MAX_DIST);
+        }, bed);
+        await p.waitForFunction(() => window.looseChange.game.phase !== 'rolling', null, { timeout: 20000 });
+      }
+      await p.waitForFunction(() => !document.getElementById('over').hidden, null, { timeout: 20000 });
+    };
+    const starts = () => p.evaluate(() => window.looseChange.game.turn);
+    assert.equal(await starts(), 0, 'Copper should start the first game');
+    await finish();
+    await p.click('#againBtn');
+    assert.equal(await starts(), 1, 'Silver should start the second game');
+    assert.ok(await p.locator('#who1.on').count(), "the bar should show it's Silver's turn");
+    await p.reload();
+    await p.click('#resumeBtn');
+    await finish();
+    await p.click('#againBtn');
+    assert.equal(await starts(), 0, 'Copper should start the third game');
+    await pctx.close();
+    step('in Pass the phone the colours take turns to go first');
+  }
+
   // With JavaScript off, the page says what it needs it for instead of showing an empty board.
   {
     const nctx = await browser.newContext({ viewport: { width: 390, height: 844 }, javaScriptEnabled: false });

@@ -89,12 +89,15 @@ const regular = () => REGULARS.find(r => r.id === game.opp);
 // a player's name in the middle of a sentence
 const nameIn = p => (game.opp !== 'pass' && !isSolo() && p === 0 ? 'you' : game.names[p]);
 
-function newGame(opp, need, resume) {
+// `first`: who goes first in a new game. You always do against a regular; in Pass the phone it's whoever went second
+// last time, so the two colours take turns at the first shove.
+function newGame(opp, need, resume, first = 0) {
   game = {
     opp, need,
     names: names(opp),
     marks: resume?.marks ? resume.marks.map(m => [...m]) : newMarks(),
-    turn: resume?.turn ?? 0,
+    turn: resume?.turn ?? first,
+    first: resume ? (resume.first === 1 ? 1 : 0) : first,
     turns: resume?.turns ?? 1,          // on your own: which turn this is
     hand: COINS, board: [], current: null,
     phase: 'aim', aim: null, chalk: null, fade: 0, falls: [],
@@ -126,7 +129,7 @@ function startTurn(announce, resume) {
   // five coins out of the drawer, in a random order
   const rnd = seeded(game.seed);
   game.faces = FACES[game.turn].map((_, i) => i).sort(() => rnd() - 0.5).slice(0, COINS);
-  game.snapshot = { opp: game.opp, need: game.need, marks: game.marks.map(m => [...m]), turn: game.turn, turns: game.turns, seed: game.seed };
+  game.snapshot = { opp: game.opp, need: game.need, marks: game.marks.map(m => [...m]), turn: game.turn, turns: game.turns, first: game.first, seed: game.seed };
   save();
   if (announce) {
     const who = game.names[game.turn];
@@ -214,7 +217,7 @@ function scoreUp() {
   } else {
     game.snapshot = {
       opp: game.opp, need: game.need, marks: game.marks.map(m => [...m]),
-      turn: isSolo() ? game.turn : 1 - game.turn, turns: isSolo() ? game.turns + 1 : game.turns,
+      turn: isSolo() ? game.turn : 1 - game.turn, turns: isSolo() ? game.turns + 1 : game.turns, first: game.first,
     };
   }
   save();
@@ -726,7 +729,12 @@ $('quitBtn').onclick = () => {
   toTitle();
 };
 $('soundBtn').onclick = () => { prefs.muted = !prefs.muted; sound.setMuted(prefs.muted); save(); syncMenu(); };
-$('againBtn').onclick = () => { if (!game) return; sound.wake(); show(null); const { opp, need } = game; newGame(opp, need); };
+$('againBtn').onclick = () => {
+  if (!game) return;
+  sound.wake(); show(null);
+  const { opp, need, first } = game;
+  newGame(opp, need, null, opp === 'pass' ? 1 - first : 0);
+};
 $('overMenuBtn').onclick = toTitle;
 function clearHud() {
   for (const p of [0, 1]) { const el = $(`who${p}`); el.querySelector('.name').textContent = ''; el.querySelector('.togo').textContent = ''; el.classList.remove('on', 'solo'); }
