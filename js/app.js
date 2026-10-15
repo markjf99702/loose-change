@@ -402,6 +402,8 @@ function frame(now) {
   draw(now);
   requestAnimationFrame(frame);
 }
+// A hidden tab gets no frames, and the frames are what turn the slide's hiss down, so hush it here.
+document.addEventListener('visibilitychange', () => { if (document.hidden) sound.slide(0); });
 
 function update(dt) {
   game.clock += dt;

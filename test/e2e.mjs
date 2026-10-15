@@ -25,12 +25,15 @@ const base = `http://localhost:${server.address().port}/`;
 
 const browser = await pw.chromium.launch();
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true });
-const page = await ctx.newPage();
 const problems = [];
-page.on('pageerror', e => problems.push(e.message));
-page.on('console', m => { if (m.type() === 'error') problems.push(m.text()); });
-page.on('requestfailed', r => problems.push('failed: ' + r.url()));
-page.on('request', r => { if (!r.url().startsWith(base) && !r.url().startsWith('data:') && !r.url().startsWith('blob:')) problems.push('left the site: ' + r.url()); });
+const watch = p => {
+  p.on('pageerror', e => problems.push(e.message));
+  p.on('console', m => { if (m.type() === 'error') problems.push(m.text()); });
+  p.on('requestfailed', r => problems.push('failed: ' + r.url()));
+  p.on('request', r => { if (!r.url().startsWith(base) && !r.url().startsWith('data:') && !r.url().startsWith('blob:')) problems.push('left the site: ' + r.url()); });
+  return p;
+};
+const page = watch(await ctx.newPage());
 
 const step = msg => console.log('  ' + msg);
 try {
@@ -117,6 +120,36 @@ try {
     await page.waitForFunction(() => !!window.looseChange, null, { timeout: 5000 });
     await ctx.setOffline(false);
     step('offline reload works');
+  }
+
+  // The slide's hiss is turned down frame by frame, and a hidden tab gets no frames: it has to stop anyway.
+  {
+    const hctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const p = watch(await hctx.newPage());
+    await p.addInitScript(() => {
+      // the hiss is the one sound whose level is eased with setTargetAtTime
+      const ease = AudioParam.prototype.setTargetAtTime;
+      AudioParam.prototype.setTargetAtTime = function (...a) { window.hiss = this; return ease.apply(this, a); };
+      // switching tabs, as far as the page can tell: document.hidden, the event, and no frames until it's back
+      let hidden = false;
+      const held = [], raf = window.requestAnimationFrame.bind(window);
+      window.requestAnimationFrame = cb => raf(t => (hidden ? held.push(cb) : cb(t)));
+      Object.defineProperty(document, 'hidden', { get: () => hidden });
+      Object.defineProperty(document, 'visibilityState', { get: () => (hidden ? 'hidden' : 'visible') });
+      window.hideTab = h => { hidden = h; document.dispatchEvent(new Event('visibilitychange')); if (!h) held.splice(0).forEach(raf); };
+    });
+    await p.goto(base);
+    await p.click('#startBtn');   // the tap wakes the sound
+    await p.waitForFunction(() => window.looseChange.game?.phase === 'aim', null, { polling: 50 });
+    await p.evaluate(() => window.looseChange.shoot(0, 690));
+    await p.waitForFunction(() => window.hiss?.value > 0.05, null, { polling: 20, timeout: 5000 });
+    await p.evaluate(() => window.hideTab(true));
+    await p.waitForFunction(() => window.hiss.value < 0.005, null, { polling: 50, timeout: 3000 })
+      .catch(() => assert.fail('the slide hiss kept going in a hidden tab'));
+    await p.evaluate(() => window.hideTab(false));
+    await p.waitForFunction(() => window.looseChange.game.phase === 'aim', null, { polling: 50, timeout: 10000 });
+    await hctx.close();
+    step('a hidden tab hushes the slide');
   }
 
   assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems while using it');
