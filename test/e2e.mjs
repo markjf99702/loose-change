@@ -319,6 +319,19 @@ try {
       assert.deepEqual(fresh, { turn: 0, hand: 4, coins: 1, seed: 5, marks }, 'a damaged turn should start again from an empty board: ' + JSON.stringify(soFar));
     }
     step('a damaged turn-so-far starts the turn again');
+
+    // A save from before the turn so far was kept, like every game in progress today (no seed, nothing about who went
+    // first), carries on from the start of its turn with its marks, and the save picks up the turn's seed from there.
+    await q.evaluate(m => localStorage.setItem('loose-change.v1', JSON.stringify({ game: { opp: 'pass', need: 1, marks: m, turn: 1, turns: 1 } })), marks);
+    await q.reload();
+    await q.click('#resumeBtn');
+    await q.waitForFunction(() => window.looseChange.game?.phase === 'aim');
+    const old = await q.evaluate(() => {
+      const g = window.looseChange.game, kept = JSON.parse(localStorage.getItem('loose-change.v1')).game;
+      return { turn: g.turn, first: g.first, hand: g.hand, coins: g.board.length, marks: g.marks, seedKept: Number.isInteger(g.seed) && kept.seed === g.seed };
+    });
+    assert.deepEqual(old, { turn: 1, first: 0, hand: 4, coins: 1, marks, seedKept: true }, 'a save from before should carry on from the start of its turn');
+    step('a save from before carries on from the start of its turn');
     await sctx.close();
   }
 
