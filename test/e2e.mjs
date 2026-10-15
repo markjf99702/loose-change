@@ -42,6 +42,13 @@ try {
   await page.evaluate(() => localStorage.clear());
   await page.reload();
 
+  // Choosing an opponent from the keyboard leaves the keyboard on that button.
+  await page.focus('#opponents button[data-opp="alan"]');
+  await page.keyboard.press('Enter');
+  assert.equal(await page.getAttribute('#opponents button[data-opp="alan"]', 'aria-pressed'), 'true', 'Enter should pick Big Alan');
+  assert.equal(await page.evaluate(() => document.activeElement.dataset?.opp), 'alan', 'the opponent chosen from the keyboard should keep the focus');
+  step('an opponent chosen from the keyboard keeps the focus');
+
   // Start a quick game against whoever is picked (Doris by default).
   await page.click('#opponents button[data-opp="doris"]');
   await page.click('#lengths button[data-need="1"]').catch(() => {});

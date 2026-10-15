@@ -614,21 +614,28 @@ function show(id) {
 let rulesFrom = 'title';
 function buildTitle() {
   const box = $('opponents');
-  box.innerHTML = '';
-  const opts = [...REGULARS.map(r => ({ id: r.id, name: r.name, blurb: r.blurb })), { id: 'pass', name: 'Pass the phone', blurb: 'Two players, copper against silver' }, { id: 'solo', name: 'On your own', blurb: 'Fill every bed in as few turns as you can' }];
-  for (const o of opts) {
-    const b = document.createElement('button');
-    b.dataset.opp = o.id;
-    b.setAttribute('aria-pressed', String(prefs.opp === o.id));
-    const rec = prefs.record[recordKey(o.id, prefs.need)];
-    const best = o.id === 'solo' && prefs.best[prefs.need];
-    b.innerHTML = `<b></b><span></span>${rec || best ? '<em class="rec"></em>' : ''}`;
-    b.querySelector('b').textContent = o.name;
-    b.querySelector('span').textContent = o.blurb;
-    if (rec) b.querySelector('.rec').textContent = `${lengthName(prefs.need)[0].toUpperCase()}${lengthName(prefs.need).slice(1)}: won ${rec[0]}, lost ${rec[1]}`;
-    if (best) b.querySelector('.rec').textContent = `Best: ${best} turn${best === 1 ? '' : 's'}`;
-    b.onclick = () => { prefs.opp = o.id; save(); buildTitle(); };
-    box.append(b);
+  // The buttons are made once and then kept up to date, so one chosen from the keyboard keeps the focus.
+  if (!box.children.length) {
+    const opts = [...REGULARS.map(r => ({ id: r.id, name: r.name, blurb: r.blurb })), { id: 'pass', name: 'Pass the phone', blurb: 'Two players, copper against silver' }, { id: 'solo', name: 'On your own', blurb: 'Fill every bed in as few turns as you can' }];
+    for (const o of opts) {
+      const b = document.createElement('button');
+      b.dataset.opp = o.id;
+      b.innerHTML = '<b></b><span></span><em class="rec"></em>';
+      b.querySelector('b').textContent = o.name;
+      b.querySelector('span').textContent = o.blurb;
+      b.onclick = () => { prefs.opp = o.id; save(); buildTitle(); };
+      box.append(b);
+    }
+  }
+  for (const b of box.children) {
+    const id = b.dataset.opp;
+    b.setAttribute('aria-pressed', String(prefs.opp === id));
+    const rec = prefs.record[recordKey(id, prefs.need)];
+    const best = id === 'solo' && prefs.best[prefs.need];
+    const em = b.querySelector('.rec');
+    em.textContent = best ? `Best: ${best} turn${best === 1 ? '' : 's'}`
+      : rec ? `${lengthName(prefs.need)[0].toUpperCase()}${lengthName(prefs.need).slice(1)}: won ${rec[0]}, lost ${rec[1]}` : '';
+    em.hidden = !em.textContent;
   }
   for (const b of $('lengths').querySelectorAll('button')) {
     b.setAttribute('aria-pressed', String(Number(b.dataset.need) === prefs.need));
