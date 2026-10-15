@@ -13,7 +13,9 @@ let pw;
 try { pw = require('playwright'); } catch { pw = require(join(execSync('npm root -g').toString().trim(), 'playwright')); }
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json', '.json': 'application/json' };
+let down = false;   // while it's true the server drops every connection, like a phone with no signal
 const server = createServer(async (req, res) => {
+  if (down) { req.socket.destroy(); return; }
   const path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
   let body;
   try { body = await readFile(join(root, path === '/' ? 'index.html' : path)); } catch { res.writeHead(404); res.end(); return; }
@@ -154,12 +156,17 @@ try {
   if (!hasSw) step('offline: skipped, no sw.js yet');
   else if (!controlled) step('offline: skipped, sw.js exists but no service worker took control (app.js only registers it over https)');
   else {
-    await ctx.setOffline(true);
-    await page.reload();
-    assert.ok(await page.title(), 'the page did not load offline');
-    await page.waitForFunction(() => !!window.looseChange, null, { timeout: 5000 });
-    await ctx.setOffline(false);
-    step('offline reload works');
+    // Take the server away. (ctx.setOffline doesn't reach the service worker's own requests, so the worker
+    // would still get through to the server and this check could never fail.)
+    down = true;
+    server.closeAllConnections();
+    await page.reload().catch(e => assert.fail('the page did not load offline: ' + e.message.split('\n')[0]));
+    await page.waitForFunction(() => !!window.looseChange, null, { timeout: 10000 })
+      .catch(() => assert.fail('the game did not start offline'));
+    const fonts = await page.evaluate(async () => { await document.fonts.ready; return [...document.fonts].map(f => `${f.family} ${f.status}`); });
+    assert.ok(fonts.length && fonts.every(f => f.endsWith(' loaded')), 'the fonts did not load offline: ' + fonts.join(', '));
+    down = false;
+    step('offline reload works, fonts and all');
   }
 
   // The slide's hiss is turned down frame by frame, and a hidden tab gets no frames: it has to stop anyway.
