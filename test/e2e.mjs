@@ -230,6 +230,21 @@ try {
     step('bad records and bests are dropped and the good ones kept');
   }
 
+  // With JavaScript off, the page says what it needs it for instead of showing an empty board.
+  {
+    const nctx = await browser.newContext({ viewport: { width: 390, height: 844 }, javaScriptEnabled: false });
+    const p = await nctx.newPage();
+    await p.goto(base);
+    const box = await p.locator('.noscript').boundingBox();
+    const cdp = await nctx.newCDPSession(p);
+    await cdp.send('DOM.getDocument');
+    const { backendNodeId } = await cdp.send('DOM.getNodeForLocation', { x: Math.round(box.x + 8), y: Math.round(box.y + 8) });
+    const { node } = await cdp.send('DOM.describeNode', { backendNodeId });
+    assert.ok(node.nodeName === 'P' && (node.attributes || []).includes('noscript'), 'with JavaScript off the message should be on top, not ' + node.nodeName);
+    await nctx.close();
+    step('with JavaScript off it says so');
+  }
+
   assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems while using it');
   console.log('all good');
 } finally {
