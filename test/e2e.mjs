@@ -152,6 +152,44 @@ try {
     step('a hidden tab hushes the slide');
   }
 
+  // A damaged or hand-edited record or best is dropped, the good ones are kept as they are, and a win still finishes.
+  {
+    const bctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true });
+    const p = watch(await bctx.newPage());
+    await p.goto(base);
+    await p.evaluate(() => localStorage.setItem('loose-change.v1', JSON.stringify({
+      record: { 'doris:1': 5, 'alan:1': 'ab', 'landlord:1': [2], 'landlord:3': [4, 1] },
+      best: { 1: 'abc', 3: 7 },
+    })));
+    await p.reload();
+    const recs = () => p.$$eval('#opponents button', bs => bs.map(b => b.querySelector('.rec')?.textContent || '').join('|'));
+    await p.click('#lengths button[data-need="1"]');
+    assert.equal(await recs(), '||||', 'bad records and bests should not show on the title');
+    await p.click('#lengths button[data-need="3"]');
+    assert.equal(await recs(), '||Pub rules: won 4, lost 1||Best: 7 turns', 'good records and bests should be kept');
+    await p.click('#lengths button[data-need="1"]');
+    await p.click('#opponents button[data-opp="doris"]');
+    await p.click('#startBtn');
+    await p.waitForFunction(() => window.looseChange.game?.phase === 'aim');
+    await p.evaluate(() => { window.looseChange.game.marks[0] = [1, 1, 1, 1, 1, 1, 1, 1, 0]; });   // only bed 9 to go
+    for (const aim of ['bed 9', 'off', 'off', 'off', 'off']) {
+      await p.waitForFunction(() => { const g = window.looseChange.game; return g.phase === 'aim' && g.current; }, null, { timeout: 20000 });
+      await p.evaluate(aim => {
+        const lc = window.looseChange;
+        lc.game.current.x = aim === 'off' ? 60 : lc.BOARD.w / 2;
+        lc.shoot(0, aim === 'off' ? lc.MAX_DIST : (lc.lineY(8) + lc.lineY(9)) / 2 - lc.BOARD.startY);
+      }, aim);
+      await p.waitForFunction(() => window.looseChange.game.phase !== 'rolling', null, { timeout: 20000 });
+    }
+    await p.waitForFunction(() => !document.getElementById('over').hidden, null, { timeout: 20000 })
+      .catch(() => assert.fail('the winning turn should finish the game'));
+    const kept = await p.evaluate(() => JSON.parse(localStorage.getItem('loose-change.v1')));
+    assert.deepEqual(kept.record, { 'landlord:3': [4, 1], 'doris:1': [1, 0] });
+    assert.deepEqual(kept.best, { 3: 7 });
+    await bctx.close();
+    step('bad records and bests are dropped and the good ones kept');
+  }
+
   assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems while using it');
   console.log('all good');
 } finally {

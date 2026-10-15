@@ -27,6 +27,12 @@ const goodMarks = m => Array.isArray(m) && m.length === 2 &&
   m.every(row => Array.isArray(row) && row.length === BOARD.beds && row.every(n => Number.isInteger(n) && n >= 0 && n <= 3));
 const goodGame = s => s && OPPONENTS.includes(s.opp) && (s.need === 1 || s.need === 3) && goodMarks(s.marks) &&
   (s.turn === 0 || s.turn === 1) && Number.isInteger(s.turns ?? 1);
+// A record is [won, lost] and a best is a number of turns. Anything else (a damaged or hand-edited save) is dropped,
+// and the good ones are kept as they are.
+const count = n => Number.isInteger(n) && n >= 0;
+const goodRecord = r => Array.isArray(r) && r.length === 2 && r.every(count);
+const goodBest = n => count(n) && n > 0;
+const keepGood = (obj, good) => Object.fromEntries(Object.entries(obj && typeof obj === 'object' ? obj : {}).filter(([, v]) => good(v)));
 
 function load() { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } }
 const saved = load();
@@ -35,8 +41,8 @@ const prefs = {
   opp: OPPONENTS.includes(saved.opp) ? saved.opp : 'doris',
   need: saved.need === 3 ? 3 : 1,
   muted: !!saved.muted,
-  record: saved.record && typeof saved.record === 'object' ? saved.record : {},
-  best: saved.best && typeof saved.best === 'object' ? saved.best : {},
+  record: keepGood(saved.record, goodRecord),
+  best: keepGood(saved.best, goodBest),
   lastPower: Array.isArray(saved.lastPower) ? saved.lastPower : [null, null],
 };
 let pendingGame = goodGame(saved.game) ? saved.game : null;
