@@ -29,9 +29,10 @@ const goodGame = s => s && OPPONENTS.includes(s.opp) && (s.need === 1 || s.need 
   (s.turn === 0 || s.turn === 1) && Number.isInteger(s.turns ?? 1);
 // A turn's seed, and once a coin has been shoved, the turn so far: the coins at rest as [x, y, face, rot], the shove
 // still sliding as [x, angle, dist], the coins left in the hand and how many shoves came before it. If any of that is
-// damaged, the game carries on from the start of the turn instead.
+// damaged, the game carries on from the start of the turn instead. A number far too big for the board counts as damaged:
+// a shove that size overflows the physics into NaN, and the sound it makes stops the game.
 const goodSeed = n => Number.isInteger(n) && n >= 0 && n < 2 ** 32;
-const numbers = (a, n) => Array.isArray(a) && a.length === n && a.every(Number.isFinite);
+const numbers = (a, n) => Array.isArray(a) && a.length === n && a.every(v => Number.isFinite(v) && Math.abs(v) < 1e6);
 const goodCoin = c => numbers(c, 4) && Number.isInteger(c[2]) && c[2] >= 0 && c[2] < FACES[0].length;
 const goodSoFar = s => numbers(s.shove, 3) && Number.isInteger(s.hand) && s.hand >= 0 && Number.isInteger(s.shots) &&
   s.shots >= 0 && Array.isArray(s.coins) && s.coins.length + s.hand < COINS && s.coins.every(goodCoin);

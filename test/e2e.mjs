@@ -304,18 +304,22 @@ try {
       "Doris's coins should end up where they did before the reload: " + JSON.stringify({ first: first.coins, again: again.coins }));
     step("a reload in Doris's turn plays it out the same");
 
-    // A damaged turn-so-far in the save is dropped, and the game carries on from the start of that turn.
+    // A damaged turn-so-far in the save is dropped, and the game carries on from the start of that turn. That goes for a
+    // shove far too big to be real too, which would overflow the physics and stop the game.
     const marks = [[1, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0]];
-    await q.evaluate(m => localStorage.setItem('loose-change.v1', JSON.stringify({
-      game: { opp: 'doris', need: 1, marks: m, turn: 0, turns: 3, seed: 5, coins: 'abc', shove: [1, 2], hand: 2, shots: 1 },
-    })), marks);
-    await q.reload();
-    await q.click('#resumeBtn');
-    await q.waitForFunction(() => window.looseChange.game?.phase === 'aim');
-    const fresh = await q.evaluate(() => { const g = window.looseChange.game; return { turn: g.turn, hand: g.hand, coins: g.board.length, seed: g.seed, marks: g.marks }; });
-    assert.deepEqual(fresh, { turn: 0, hand: 4, coins: 1, seed: 5, marks }, 'a damaged turn should start again from an empty board');
-    await sctx.close();
+    for (const soFar of [{ coins: 'abc', shove: [1, 2] }, { coins: [[178, 400, 1, 0]], shove: [178, 0, 1e305] }]) {
+      await q.evaluate(([m, s]) => localStorage.setItem('loose-change.v1', JSON.stringify({
+        game: { opp: 'doris', need: 1, marks: m, turn: 0, turns: 3, seed: 5, hand: 2, shots: 1, ...s },
+      })), [marks, soFar]);
+      await q.reload();
+      await q.click('#resumeBtn');
+      await q.waitForFunction(() => window.looseChange.game?.phase === 'aim', null, { timeout: 5000 })
+        .catch(() => assert.fail('a damaged turn-so-far should start the turn again: ' + JSON.stringify(soFar)));
+      const fresh = await q.evaluate(() => { const g = window.looseChange.game; return { turn: g.turn, hand: g.hand, coins: g.board.length, seed: g.seed, marks: g.marks }; });
+      assert.deepEqual(fresh, { turn: 0, hand: 4, coins: 1, seed: 5, marks }, 'a damaged turn should start again from an empty board: ' + JSON.stringify(soFar));
+    }
     step('a damaged turn-so-far starts the turn again');
+    await sctx.close();
   }
 
   // In Pass the phone the colours take turns to go first: Play again starts with the one that went second, even after
