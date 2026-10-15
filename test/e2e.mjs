@@ -49,8 +49,24 @@ try {
   assert.equal(await page.evaluate(() => document.activeElement.dataset?.opp), 'alan', 'the opponent chosen from the keyboard should keep the focus');
   step('an opponent chosen from the keyboard keeps the focus');
 
+  // The keyboard's place shows as a ring, on the cards and on the gold button; a click shows none.
+  const ring = () => page.evaluate(() => {
+    const a = document.activeElement, s = getComputedStyle(a);
+    return { on: a.id || a.dataset.opp, style: s.outlineStyle, width: parseFloat(s.outlineWidth) };
+  });
+  await page.keyboard.press('Tab');
+  let focused = await ring();
+  assert.ok(focused.on === 'landlord' && focused.style !== 'none' && focused.width >= 2, 'a card with the keyboard should show a ring: ' + JSON.stringify(focused));
+  await page.focus('#lengths button[data-need="3"]');
+  await page.keyboard.press('Tab');
+  focused = await ring();
+  assert.ok(focused.on === 'startBtn' && focused.style !== 'none' && focused.width >= 2, 'the gold button with the keyboard should show a ring: ' + JSON.stringify(focused));
+  step('keyboard focus shows a ring');
+
   // Start a quick game against whoever is picked (Doris by default).
   await page.click('#opponents button[data-opp="doris"]');
+  focused = await ring();
+  assert.ok(focused.on !== 'doris' || focused.style === 'none', 'a clicked card should not show the keyboard ring: ' + JSON.stringify(focused));
   await page.click('#lengths button[data-need="1"]').catch(() => {});
   await page.click('#startBtn');
   await page.waitForFunction(() => window.looseChange?.game?.phase === 'aim' && window.looseChange.game.turn === 0);
