@@ -42,6 +42,10 @@ try {
   await page.evaluate(() => localStorage.clear());
   await page.reload();
 
+  // Nothing behind an open sheet takes the keyboard: the first Tab lands on the title card, not the menu button under it.
+  await page.keyboard.press('Tab');
+  assert.ok(await page.evaluate(() => !!document.activeElement.closest('#title')), 'the first Tab should land on the title card: ' + await page.evaluate(() => document.activeElement.id || document.activeElement.tagName));
+
   // Choosing an opponent from the keyboard leaves the keyboard on that button.
   await page.focus('#opponents button[data-opp="alan"]');
   await page.keyboard.press('Enter');
@@ -127,6 +131,19 @@ try {
 
   // The hud says whose turn it is.
   assert.ok(await page.locator('#who0.on').count(), 'your name should be lit on your turn');
+
+  // While the menu is open the bar and the board behind it are out of the keyboard's reach; closed, they're back.
+  const behind = () => page.evaluate(() => !!document.activeElement.closest('#app'));
+  await page.click('#menuBtn');
+  assert.equal(await behind(), false, 'the menu button should not keep the keyboard behind the open menu');
+  await page.focus('#backBtn');
+  await page.keyboard.press('Shift+Tab');
+  assert.equal(await behind(), false, 'Shift+Tab from the menu should not reach the bar behind it');
+  await page.click('#backBtn');
+  assert.equal(await page.evaluate(() => document.getElementById('app').inert), false, 'the board should be back once the menu closes');
+  await page.click('#menuBtn');
+  await page.click('#backBtn');
+  step('the menu keeps the keyboard while it is open');
 
   // Fits a phone: nothing scrolls sideways.
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'the page scrolls sideways on a phone');

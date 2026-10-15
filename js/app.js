@@ -607,6 +607,9 @@ function banner(text, small = '', ms = 1200) {
 
 function show(id) {
   for (const s of ['title', 'menu', 'rules', 'over']) $(s).hidden = s !== id;
+  // nothing behind an open sheet can take the keyboard, starting with whatever had it as the sheet opened
+  $('app').inert = !!id;
+  if (id && $('app').contains(document.activeElement)) document.activeElement.blur();
   // a button on a sheet that just closed shouldn't keep the keyboard
   if (!id && document.activeElement?.closest?.('.sheet')) document.activeElement.blur();
 }
