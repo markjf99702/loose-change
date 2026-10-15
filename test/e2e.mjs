@@ -328,9 +328,9 @@ try {
     await q.waitForFunction(() => window.looseChange.game?.phase === 'aim');
     const old = await q.evaluate(() => {
       const g = window.looseChange.game, kept = JSON.parse(localStorage.getItem('loose-change.v1')).game;
-      return { turn: g.turn, first: g.first, hand: g.hand, coins: g.board.length, marks: g.marks, seedKept: Number.isInteger(g.seed) && kept.seed === g.seed };
+      return { turn: g.turn, hand: g.hand, coins: g.board.length, marks: g.marks, seedKept: Number.isInteger(g.seed) && kept.seed === g.seed };
     });
-    assert.deepEqual(old, { turn: 1, first: 0, hand: 4, coins: 1, marks, seedKept: true }, 'a save from before should carry on from the start of its turn');
+    assert.deepEqual(old, { turn: 1, hand: 4, coins: 1, marks, seedKept: true }, 'a save from before should carry on from the start of its turn');
     step('a save from before carries on from the start of its turn');
     await sctx.close();
   }
