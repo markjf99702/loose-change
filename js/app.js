@@ -27,6 +27,19 @@ const goodMarks = m => Array.isArray(m) && m.length === 2 &&
   m.every(row => Array.isArray(row) && row.length === BOARD.beds && row.every(n => Number.isInteger(n) && n >= 0 && n <= 3));
 const goodGame = s => s && OPPONENTS.includes(s.opp) && (s.need === 1 || s.need === 3) && goodMarks(s.marks) &&
   (s.turn === 0 || s.turn === 1) && Number.isInteger(s.turns ?? 1);
+// A turn's seed, and once a coin has been shoved, the turn so far: the coins at rest as [x, y, face, rot], the shove
+// still sliding as [x, angle, dist], the coins left in the hand and how many shoves came before it. If any of that is
+// damaged, the game carries on from the start of the turn instead.
+const goodSeed = n => Number.isInteger(n) && n >= 0 && n < 2 ** 32;
+const numbers = (a, n) => Array.isArray(a) && a.length === n && a.every(Number.isFinite);
+const goodCoin = c => numbers(c, 4) && Number.isInteger(c[2]) && c[2] >= 0 && c[2] < FACES[0].length;
+const goodSoFar = s => numbers(s.shove, 3) && Number.isInteger(s.hand) && s.hand >= 0 && Number.isInteger(s.shots) &&
+  s.shots >= 0 && Array.isArray(s.coins) && s.coins.length + s.hand < COINS && s.coins.every(goodCoin);
+function tidyGame(s) {
+  const { seed, coins, shove, hand, shots, ...start } = s;
+  if (!goodSeed(seed)) return start;
+  return goodSoFar(s) ? { ...start, seed, coins, shove, hand, shots } : { ...start, seed };
+}
 // A record is [won, lost] and a best is a number of turns. Anything else (a damaged or hand-edited save) is dropped,
 // and the good ones are kept as they are.
 const count = n => Number.isInteger(n) && n >= 0;
@@ -45,9 +58,11 @@ const prefs = {
   best: keepGood(saved.best, goodBest),
   lastPower: Array.isArray(saved.lastPower) ? saved.lastPower : [null, null],
 };
-let pendingGame = goodGame(saved.game) ? saved.game : null;
+let pendingGame = goodGame(saved.game) ? tidyGame(saved.game) : null;
 
-// What's saved for "Carry on" is always the start of a turn (game.snapshot), never a turn half played.
+// What's saved for "Carry on" (game.snapshot) is the turn so far: the marks it started with and, from the first
+// shove on, the coins at rest and the shove still sliding. Carry on plays that shove again from where the coins lay,
+// and a regular's shots come from the turn's seed, so a reload can't take a turn back or re-roll the regular's.
 function save() {
   try {
     localStorage.setItem(KEY, JSON.stringify({ ...prefs, game: game ? game.snapshot : pendingGame }));
@@ -88,17 +103,30 @@ function newGame(opp, need, resume) {
     cpu: null, winner: -1, snapshot: null,
   };
   pendingGame = null;
-  startTurn(true);
+  startTurn(true, resume);
 }
 
 // Run fn after `seconds` of game time.
 function later(seconds, fn) { game.timers.push({ at: game.clock + seconds, fn }); }
 
-function startTurn(announce) {
+// A random stream that comes out the same every time for the same seed (mulberry32).
+const seeded = seed => () => {
+  seed = (seed + 0x6D2B79F5) >>> 0;
+  let t = Math.imul(seed ^ (seed >>> 15), seed | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
+// `resume` is a saved game carrying on: from the middle of its turn if a coin had been shoved.
+function startTurn(announce, resume) {
   game.hand = COINS; game.board = []; game.falls = [];
+  // Each turn has a seed, for the order the coins come out of the drawer and for the regular's shots.
+  game.seed = resume?.seed ?? Math.floor(Math.random() * 2 ** 32);
+  game.shots = 0;
   // five coins out of the drawer, in a random order
-  game.faces = FACES[game.turn].map((_, i) => i).sort(() => Math.random() - 0.5).slice(0, COINS);
-  game.snapshot = { opp: game.opp, need: game.need, marks: game.marks.map(m => [...m]), turn: game.turn, turns: game.turns };
+  const rnd = seeded(game.seed);
+  game.faces = FACES[game.turn].map((_, i) => i).sort(() => rnd() - 0.5).slice(0, COINS);
+  game.snapshot = { opp: game.opp, need: game.need, marks: game.marks.map(m => [...m]), turn: game.turn, turns: game.turns, seed: game.seed };
   save();
   if (announce) {
     const who = game.names[game.turn];
@@ -106,7 +134,17 @@ function startTurn(announce) {
     banner(isSolo() ? `Turn ${game.turns}` : game.opp === 'pass' ? `${who}'s turn` : game.turn === 0 ? 'Your turn' : `${who}'s turn`,
       `${togo} mark${togo === 1 ? '' : 's'} to go`, 1200);
   }
+  if (!resume?.shove) { nextCoin(); return; }
+  // Carrying on in the middle of a turn: the coins where they lay, then the shove that was sliding, played again.
+  for (const [x, y, face, rot] of resume.coins) {
+    game.board.push(Object.assign(makeCoin(x, nextId++), { y, face, rot, kind: game.turn }));
+  }
+  game.hand = resume.hand + 1;
+  game.shots = resume.shots;
   nextCoin();
+  const [from, angle, dist] = resume.shove;
+  game.current.x = from;
+  shoot(angle, dist, true);
 }
 
 function nextCoin() {
@@ -120,11 +158,19 @@ function nextCoin() {
   if (isCpu(game.turn)) game.cpu = { stage: 'think', t: 0, wait: 0.5 + Math.random() * 0.4 };
 }
 
-function shoot(angle, dist) {
+// `again`: the shove that was sliding when the page was reloaded, played again on Carry on.
+function shoot(angle, dist, again = false) {
   const c = game.current;
   if (!c) return;
   game.lastX[game.turn] = c.x;
-  if (!isCpu(game.turn)) { prefs.lastPower[game.turn] = powerOf(dist); prefs.shots = (prefs.shots || 0) + 1; }
+  if (!isCpu(game.turn) && !again) { prefs.lastPower[game.turn] = powerOf(dist); prefs.shots = (prefs.shots || 0) + 1; }
+  // Save the turn so far before the coin moves, so a reload plays this shove again instead of handing the coin back.
+  if (game.snapshot) {
+    const resting = game.board.filter(o => o !== c && !o.dead).map(o => [o.x, o.y, o.face, o.rot]);
+    Object.assign(game.snapshot, { coins: resting, shove: [c.x, angle, dist], hand: game.hand, shots: game.shots });
+    save();
+  }
+  game.shots++;
   strike(c, angle, dist);
   sound.shove(powerOf(dist));
   game.phase = 'rolling'; game.aim = null; game.current = null; game.cpu = null;
@@ -297,7 +343,9 @@ function updateCpu(dt) {
   if (cpu.stage === 'think' && cpu.t >= cpu.wait) {
     const who = regular();
     const others = game.board.filter(o => o !== c);
-    const shot = wobble(chooseShot(others, game.marks, game.turn, game.need, who), who);
+    // each shot from the turn's seed, so after a reload the regular plays the same shots again
+    const rnd = seeded((game.seed + Math.imul(game.shots + 1, 0x9E3779B9)) >>> 0);
+    const shot = wobble(chooseShot(others, game.marks, game.turn, game.need, who, rnd), who, rnd);
     shot.x = Math.max(BOARD.r, Math.min(BOARD.w - BOARD.r, shot.x));
     Object.assign(cpu, { stage: 'move', t: 0, shot, x0: c.x, dur: 0.45 + Math.abs(shot.x - c.x) * 0.003 });
   }

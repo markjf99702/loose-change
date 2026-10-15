@@ -237,6 +237,87 @@ try {
     step('bad records and bests are dropped and the good ones kept');
   }
 
+  // A reload in the middle of a turn carries on from where it was: your coins stay where they lay and the one still
+  // sliding finishes its slide, and the regular's turn plays out the same again, so a reload can't take back a bad
+  // turn of yours or re-roll a good one of his.
+  {
+    const opts = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true };
+    const rctx = await browser.newContext(opts);
+    const p = watch(await rctx.newPage());
+    await p.goto(base);
+    await p.evaluate(() => localStorage.clear());
+    await p.reload();
+    await p.click('#opponents button[data-opp="doris"]');
+    await p.click('#lengths button[data-need="1"]');
+    await p.click('#startBtn');
+    const myAim = () => p.waitForFunction(() => { const g = window.looseChange.game; return g.turn === 0 && g.phase === 'aim' && g.current; }, null, { timeout: 20000 });
+    const resting = () => p.evaluate(() => { const g = window.looseChange.game; return { hand: g.hand, coins: g.board.filter(c => c !== g.current && !c.dead).map(c => [c.x, c.y]) }; });
+    // a straight shove from x to the middle of a bed, or off the far end
+    const shove = (x, bed) => p.evaluate(([x, bed]) => {
+      const lc = window.looseChange;
+      lc.game.current.x = x;
+      lc.shoot(0, bed ? (lc.lineY(bed - 1) + lc.lineY(bed)) / 2 - lc.BOARD.startY : lc.MAX_DIST);
+      return lc.game.phase;
+    }, [x, bed]);
+    await myAim();
+    await shove(120, 5);
+    await myAim();
+    const before = await resting();
+    assert.equal(await shove(240, 8), 'rolling');
+    await p.reload();                                 // with the second coin still sliding
+    await p.click('#resumeBtn');
+    await myAim();
+    const after = await resting();
+    assert.equal(after.hand, 2, 'Carry on should not hand back coins already played: ' + JSON.stringify(after));
+    assert.deepEqual(after.coins[0], before.coins[0], 'the first coin should be where it lay');
+    assert.ok(after.coins.length === 2 && Math.abs(after.coins[1][1] - 468) < 4, 'the coin that was sliding should finish its slide in bed 8: ' + JSON.stringify(after.coins));
+    step('a reload in your turn carries on where it was');
+
+    // Three more off the far end, then Doris's turn: keep the save from just after her second shove and let her finish.
+    for (let i = 0; i < 3; i++) { await myAim(); await shove(178, 0); }
+    await p.waitForFunction(() => window.looseChange.game.turn === 1, null, { timeout: 20000 });
+    const hurry = async q => { const b = await q.locator('#board').boundingBox(); await q.mouse.move(b.x + b.width / 2, b.y + b.height / 2); await q.mouse.down(); };
+    const ending = q => q.waitForFunction(() => {
+      const g = window.looseChange.game;
+      return g.turn === 1 && g.phase === 'scoring' && { marks: g.marks, coins: g.board.filter(c => !c.dead).map(c => [c.x, c.y]) };
+    }, null, { timeout: 60000 }).then(h => h.jsonValue());
+    await hurry(p);
+    const save = await p.waitForFunction(() => {
+      const g = window.looseChange.game;
+      return g.turn === 1 && g.snapshot?.shots === 1 && localStorage.getItem('loose-change.v1');
+    }, null, { polling: 'raf', timeout: 30000 }).then(h => h.jsonValue());
+    const first = await ending(p);
+    await p.mouse.up();
+    await rctx.close();
+    // The same save on another page, as if the reload had come then.
+    const sctx = await browser.newContext(opts);
+    const q = watch(await sctx.newPage());
+    await q.goto(base);
+    await q.evaluate(s => localStorage.setItem('loose-change.v1', s), save);
+    await q.reload();
+    await q.click('#resumeBtn');
+    await hurry(q);
+    const again = await ending(q);
+    await q.mouse.up();
+    assert.deepEqual(again.marks, first.marks, "Doris's turn should chalk up the same after a reload");
+    assert.ok(again.coins.length === first.coins.length && again.coins.every((c, i) => Math.hypot(c[0] - first.coins[i][0], c[1] - first.coins[i][1]) < 1e-6),
+      "Doris's coins should end up where they did before the reload: " + JSON.stringify({ first: first.coins, again: again.coins }));
+    step("a reload in Doris's turn plays it out the same");
+
+    // A damaged turn-so-far in the save is dropped, and the game carries on from the start of that turn.
+    const marks = [[1, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0]];
+    await q.evaluate(m => localStorage.setItem('loose-change.v1', JSON.stringify({
+      game: { opp: 'doris', need: 1, marks: m, turn: 0, turns: 3, seed: 5, coins: 'abc', shove: [1, 2], hand: 2, shots: 1 },
+    })), marks);
+    await q.reload();
+    await q.click('#resumeBtn');
+    await q.waitForFunction(() => window.looseChange.game?.phase === 'aim');
+    const fresh = await q.evaluate(() => { const g = window.looseChange.game; return { turn: g.turn, hand: g.hand, coins: g.board.length, seed: g.seed, marks: g.marks }; });
+    assert.deepEqual(fresh, { turn: 0, hand: 4, coins: 1, seed: 5, marks }, 'a damaged turn should start again from an empty board');
+    await sctx.close();
+    step('a damaged turn-so-far starts the turn again');
+  }
+
   // With JavaScript off, the page says what it needs it for instead of showing an empty board.
   {
     const nctx = await browser.newContext({ viewport: { width: 390, height: 844 }, javaScriptEnabled: false });
