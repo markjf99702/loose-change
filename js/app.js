@@ -314,8 +314,8 @@ const QUIPS = {
     yours: ['Fluke.', 'Board\'s tilted your way.', 'Lucky.'],
     given: ['Cheers, mate.', 'I\'ll take that.'],
     gave: ['Board\'s crooked.', 'Meant that.'],
-    won: ['Best of three?', 'Fluke. Again.'],
-    lost: ['Get them in, then.'],
+    won: ['Get them in, then.'],
+    lost: ['Best of three?', 'Fluke. Again.'],
   },
   landlord: {
     mine: ['My board. My rules.', 'Forty years on this board.', 'Watch and learn.'],
