@@ -335,6 +335,40 @@ try {
     await sctx.close();
   }
 
+  // With a game waiting to carry on, the first tap on Rack 'em up only asks, like the menu's New game, so one tap can't
+  // throw the saved game away. Choosing another opponent or length asks again, and the second tap starts the new game.
+  {
+    const tctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true });
+    const p = watch(await tctx.newPage());
+    await p.goto(base);
+    const marks = [[3, 3, 3, 3, 3, 2, 2, 0, 0], [2, 2, 2, 2, 2, 2, 1, 1, 0]];   // 33 marks into a pub game
+    await p.evaluate(m => localStorage.setItem('loose-change.v1', JSON.stringify({
+      opp: 'landlord', need: 3, game: { opp: 'landlord', need: 3, marks: m, turn: 0, turns: 1, seed: 7 },
+    })), marks);
+    await p.reload();
+    assert.equal(await p.textContent('#resumeBtn'), 'Carry on against The Landlord');
+    const waiting = () => p.evaluate(() => ({ started: !!window.looseChange.game, marks: JSON.parse(localStorage.getItem('loose-change.v1')).game?.marks }));
+    await p.click('#startBtn');
+    assert.equal(await p.textContent('#startBtn'), 'Tap again to start a new game', "the first tap on Rack 'em up should ask");
+    assert.deepEqual(await waiting(), { started: false, marks }, "one tap on Rack 'em up should leave the saved game alone");
+    await p.click('#opponents button[data-opp="doris"]');
+    assert.equal(await p.textContent('#startBtn'), "Rack 'em up", 'choosing another opponent should ask again');
+    await p.click('#startBtn');
+    await p.click('#lengths button[data-need="1"]');
+    assert.equal(await p.textContent('#startBtn'), "Rack 'em up", 'choosing another length should ask again');
+    assert.deepEqual(await waiting(), { started: false, marks }, 'the saved game should still be waiting');
+    await p.click('#startBtn');
+    await p.click('#startBtn');
+    await p.waitForFunction(() => window.looseChange.game?.phase === 'aim');
+    const started = await p.evaluate(() => {
+      const g = window.looseChange.game, kept = JSON.parse(localStorage.getItem('loose-change.v1')).game;
+      return { opp: g.opp, need: g.need, marks: kept.marks.flat().reduce((a, b) => a + b, 0) };
+    });
+    assert.deepEqual(started, { opp: 'doris', need: 1, marks: 0 }, 'the second tap should start the new game');
+    await tctx.close();
+    step("with a game waiting, Rack 'em up asks before starting a new one");
+  }
+
   // In Pass the phone the colours take turns to go first: Play again starts with the one that went second, even after
   // a reload in between.
   {

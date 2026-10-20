@@ -667,6 +667,8 @@ function show(id) {
 }
 
 let rulesFrom = 'title';
+// With a saved game waiting, Rack 'em up asks before a new game replaces it, like the menu's New game.
+let startArmed = false;
 function buildTitle() {
   const box = $('opponents');
   // The buttons are made once and then kept up to date, so one chosen from the keyboard keeps the focus.
@@ -700,6 +702,9 @@ function buildTitle() {
   r.hidden = !pendingGame;
   if (pendingGame) r.textContent = pendingGame.opp === 'pass' ? 'Carry on: copper against silver'
     : pendingGame.opp === 'solo' ? `Carry on: turn ${pendingGame.turns || 1} on your own` : `Carry on against ${names(pendingGame.opp)[1]}`;
+  // choosing another opponent or length asks again
+  startArmed = false;
+  $('startBtn').textContent = 'Rack \'em up';
 }
 
 let quitArmed = false;
@@ -714,7 +719,10 @@ function toTitle() {
   buildTitle(); show('title'); clearHud();
 }
 
-$('startBtn').onclick = () => { sound.wake(); show(null); newGame(prefs.opp, prefs.need); };
+$('startBtn').onclick = () => {
+  if (pendingGame && !startArmed) { startArmed = true; $('startBtn').textContent = 'Tap again to start a new game'; return; }
+  sound.wake(); show(null); newGame(prefs.opp, prefs.need);
+};
 $('resumeBtn').onclick = () => { if (!pendingGame) return; sound.wake(); const p = pendingGame; show(null); newGame(p.opp, p.need, p); };
 $('rulesBtn').onclick = () => { rulesFrom = 'title'; show('rules'); };
 $('menuRulesBtn').onclick = () => { rulesFrom = 'menu'; show('rules'); };
