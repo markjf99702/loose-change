@@ -199,6 +199,43 @@ try {
     step('a hidden tab hushes the slide');
   }
 
+  // The hint under the coins in your first games pulses, but even at its faintest it reads at 4.5:1 or better on the
+  // table (#1c1410). Watched frame by frame for a little over one pulse (2.5 s).
+  {
+    const tctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true });
+    const p = watch(await tctx.newPage());
+    await p.goto(base);
+    await p.click('#startBtn');
+    await p.waitForFunction(() => window.looseChange.game?.phase === 'aim' && window.looseChange.game.turn === 0);
+    const drawn = await p.evaluate(() => new Promise(done => {
+      const seen = [], fillText = CanvasRenderingContext2D.prototype.fillText;
+      // the caption under the hand is the one line drawn in 13px type, and at the start of a first game it's the hint
+      CanvasRenderingContext2D.prototype.fillText = function (text, ...at) {
+        if (/\b13px\b/.test(this.font)) seen.push({ text, colour: this.fillStyle });
+        return fillText.call(this, text, ...at);
+      };
+      setTimeout(() => { CanvasRenderingContext2D.prototype.fillText = fillText; done(seen); }, 2800);
+    }));
+    const rgba = drawn.map(d => /^rgba\((\d+), (\d+), (\d+), ([\d.]+)\)$/.exec(d.colour)?.slice(1).map(Number));
+    assert.ok(drawn.length > 5 && new Set(drawn.map(d => d.text)).size === 1 && rgba.every(Boolean),
+      'the hint should be drawn, see-through, frame after frame: ' + JSON.stringify(drawn.slice(0, 3)));
+    const luminance = rgb => {
+      const [r, g, b] = rgb.map(c => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const table = [0x1c, 0x14, 0x10];
+    const contrast = ([r, g, b, a]) => {
+      const lit = luminance([r, g, b].map((c, i) => c * a + table[i] * (1 - a))), dark = luminance(table);
+      return (lit + 0.05) / (dark + 0.05);
+    };
+    const alphas = rgba.map(c => c[3]);
+    const faintest = rgba[alphas.indexOf(Math.min(...alphas))];
+    assert.ok(contrast(faintest) >= 4.5, `the hint should read at 4.5:1 or better at its faintest, not ${contrast(faintest).toFixed(2)}:1 (opacity ${faintest[3]})`);
+    assert.ok(Math.max(...alphas) - Math.min(...alphas) > 0.1, 'the hint should still pulse: ' + alphas.join(' '));
+    await tctx.close();
+    step('the first-game hint stays readable all through its pulse');
+  }
+
   // A damaged or hand-edited record or best is dropped, the good ones are kept as they are, and a win still finishes.
   {
     const bctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true });

@@ -596,7 +596,8 @@ function drawCaption(now, hy) {
   const v = view;
   const human = !isCpu(game.turn);
   const teach = human && !game.aim && !drag && (prefs.shots || 0) < 3;
-  const a = teach ? 0.35 + 0.25 * Math.sin(now / 400) : 0.6;
+  // the hint pulses between 0.55 and 0.8, so even at its faintest it reads at better than 5:1 on the table
+  const a = teach ? 0.675 + 0.125 * Math.sin(now / 400) : 0.6;
   const who = game.opp === 'pass' ? game.names[game.turn] : human ? 'You' : game.names[game.turn];
   const text = teach ? 'Slide to place · pull back to shove'
     : `${who}: ${FACES[game.turn][game.current.face].name}${!human && hurry == null && game.cpu ? ' · hold to hurry' : ''}`;
