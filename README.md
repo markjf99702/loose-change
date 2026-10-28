@@ -57,7 +57,7 @@ To put it online with GitHub Pages: **Settings → Pages → Build and deploymen
 - `js/render.js`: draws the wood, the brass lines, the coins and the chalk on a canvas.
 - `js/sound.js`: the sounds, made with Web Audio.
 - `fonts/`: Fraunces and Figtree (SIL Open Font License), served from here so nothing loads from elsewhere.
-- `sw.js`: keeps a copy for playing offline.
+- `sw.js`: keeps a copy for playing offline. On a connection that isn't answering, a page opens from that copy after four seconds. `FILES` in it is a fingerprint of the files it keeps: change one and `npm test` says what to set it to, so a release never leaves the copy half old.
 - `manifest.webmanifest`, `icon.svg`, `icon-*.png`: for installing it to a home screen.
 - `tools/`: the screenshot and icon scripts above. `scripts/build.mjs`: the single-file build.
 - `test/`: unit tests and a run through the real page in Chromium.
